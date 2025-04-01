@@ -1,83 +1,49 @@
 import cv2
+from matplotlib import pyplot as plt
 import numpy as np
 
-def calculate_ndvi_from_keypoints(image1_path, image2_path):
-    # Load images
-    img1 = cv2.imread(image1_path, cv2.IMREAD_GRAYSCALE)  # Load as grayscale
-    img2 = cv2.imread(image2_path, cv2.IMREAD_GRAYSCALE)  # Load as grayscale
+def filter_matches_with_mask(matches, mask):
+    filtered_matches = []
+    for i, m in enumerate(matches):
+        if mask[i] == 1:  # mask là mảng NumPy, giá trị True được biểu diễn bằng 1
+            filtered_matches.append(m)
+    return filtered_matches
 
-    if img1 is None or img2 is None:
-        raise ValueError("Could not open or find the images.")
+img_nir = cv2.imread('28325b.jpeg',cv2.COLOR_BGR2GRAY) 
+img_rgb = cv2.imread('28325_2.jpeg',cv2.COLOR_BGR2GRAY) 
 
-    # Initialize ORB detector
-    orb = cv2.ORB_create()
+height, width, channels = img_nir.shape
+img_rgb = cv2.resize(img_rgb,(width,height),cv2.INTER_CUBIC)
 
-    # Find keypoints and descriptors with ORB
-    kp1, des1 = orb.detectAndCompute(img1, None)
-    kp2, des2 = orb.detectAndCompute(img2, None)
+orb = cv2.ORB_create(500,1.6,10,33)
 
-    # BFMatcher with hamming distance
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+# find the keypoints and descriptors with SIFT
+kp1, des1 = orb.detectAndCompute(img_nir,None)
+kp2, des2 = orb.detectAndCompute(img_rgb,None)
 
-    # Match descriptors
-    matches = bf.match(des1, des2)
+bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+# Match descriptors.
+matches = bf.match(des1,des2)
+matches = sorted(matches, key = lambda x:x.distance) 
 
-    # Sort them in the order of their distance.
-    matches = sorted(matches, key=lambda x: x.distance)
+src_pts = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
+dst_pts = np.float32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
 
-    # Extract matched keypoints
-    matched_keypoints1 = []
-    matched_keypoints2 = []
-    for match in matches:
-        matched_keypoints1.append(kp1[match.queryIdx].pt)
-        matched_keypoints2.append(kp2[match.trainIdx].pt)
+H, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
 
-    # Calculate NDVI at matched keypoints
-    ndvi_values = []
-    for pt1, pt2 in zip(matched_keypoints1, matched_keypoints2):
-        x, y = map(int, pt1)  # Convert to integers for pixel access.
-        try:
-            red = img1[y, x] #access the pixel value
-            nir = img2[y, x]
-            if red + nir == 0: # handle division by zero
-                ndvi = 0.0
-            else:
-                ndvi = (nir - red) / (nir + red)
-            ndvi_values.append(ndvi)
-        except IndexError:
-            # Handle cases where keypoints are outside the image boundaries
-            print(f"Keypoint ({x}, {y}) is out of image bounds. Skipping.")
-            continue
+filtered_matches = filter_matches_with_mask(matches, mask)
+print(f"Số lượng matches ban đầu: {len(matches)}")
+print(f"Số lượng matches sau khi lọc: {len(filtered_matches)}")
+    
 
-    return ndvi_values, matched_keypoints1, matched_keypoints2
+# Lấy kích thước ảnh đầu tiên
+height, width = img_rgb.shape[:2]
+img_rgb_aligned = cv2.warpPerspective(img_nir, H, (width, height))
 
-# Example usage:
-# Replace with your image paths
-image1_path = "red_band.tif"  # Example: red band image
-image2_path = "nir_band.tif"  # Example: near-infrared band image
+# Hiển thị ảnh
+#cv2.imshow("Image 2 Aligned", img_rgb_aligned)
+#cv2.waitKey(0)
+#cv2.destroyAllWindows()
 
-try:
-    ndvi_values, kp1, kp2 = calculate_ndvi_from_keypoints(image1_path, image2_path)
-
-    if ndvi_values:
-        print("NDVI values:", ndvi_values)
-        print("Number of matched keypoints:", len(ndvi_values))
-        #print("Matched keypoints 1:", kp1)
-        #print("Matched keypoints 2:", kp2)
-
-        # Optionally, you can visualize the matches
-        # img1_color = cv2.imread(image1_path)
-        # img2_color = cv2.imread(image2_path)
-        # matches_to_draw = [cv2.DMatch(_queryIdx=i, _trainIdx=i, _distance=0) for i in range(len(kp1))] #create dummy matches to draw lines.
-        # img_matches = cv2.drawMatches(img1_color, [cv2.KeyPoint(x=x, y=y, _size=1) for x, y in kp1], img2_color,[cv2.KeyPoint(x=x, y=y, _size=1) for x,y in kp2], matches_to_draw, None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
-        # cv2.imshow("Matches", img_matches)
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()
-
-    else:
-        print("No matched keypoints found.")
-
-except ValueError as e:
-    print(f"Error: {e}")
-except FileNotFoundError:
-    print("Error: One or both image files not found.")
+img3 = cv2.drawMatches(img_nir,kp1,img_rgb,kp2,filtered_matches[:],None, flags=2)
+plt.imshow(img3),plt.show()

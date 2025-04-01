@@ -1,31 +1,39 @@
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 
-# Đọc hai hình ảnh
-img1 = cv2.imread('ref.jpg', 0)
-img2 = cv2.imread('align.jpg', 0)
+def orb_example(image_path1, image_path2):
+    # Load images
+    img1 = cv2.imread(image_path1, cv2.IMREAD_GRAYSCALE)  # Load as grayscale
+    img2 = cv2.imread(image_path2, cv2.IMREAD_GRAYSCALE)
+    
+    if img1 is None or img2 is None:
+        print("Error: Could not load images.")
+        return
 
-# Phát hiện điểm đặc trưng và đối sánh
-orb = cv2.ORB_create()
-kp1, des1 = orb.detectAndCompute(img1, None)
-kp2, des2 = orb.detectAndCompute(img2, None)
-bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-matches = bf.match(des1, des2)
-matches = sorted(matches, key=lambda x: x.distance)
+    orb = cv2.ORB_create(500,1.3,10,31)
 
-# Ước tính ma trận biến đổi
-src_pts = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
-dst_pts = np.float32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
-M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+    # Tìm keypoints và descriptors với ORB
+    kp1, des1 = orb.detectAndCompute(img1, None)
+    kp2, des2 = orb.detectAndCompute(img2, None)
 
-# Biến đổi hình ảnh
-height, width = img2.shape
-img1_aligned = cv2.warpPerspective(img1, M, (width, height))
+    # Đối sánh đặc trưng
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    matches = bf.match(des1, des2)
 
-# Kết hợp hình ảnh
-result = cv2.addWeighted(img1_aligned, 0.5, img2, 0.5, 0)
+    # Sắp xếp các matches theo khoảng cách
+    matches = sorted(matches, key=lambda x: x.distance)
+    # Draw top matches
+    print(len(matches))
+    img_matches = cv2.drawMatches(img1, kp1, img2, kp2, matches[:], None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
 
-# Hiển thị kết quả
-cv2.imshow('Result', result)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+    # Display the result using matplotlib
+    plt.imshow(cv2.cvtColor(img_matches, cv2.COLOR_BGR2RGB))
+    plt.title("ORB Feature Matching")
+    plt.show()
+
+# Example usage (replace with your image paths)
+image_path1 = '28325b.jpeg'
+image_path2 = '28325_2.jpeg'
+
+orb_example(image_path1, image_path2)
